@@ -1,4 +1,5 @@
-# read training, validating, and testing data
+# data input class of this implementation
+# reading training, validating, and testing data
 
 
 class DataInput:

@@ -1,4 +1,7 @@
+# the main class of this implementation
+# including configurations and every function needed for training
 import data_input
+import transe
 
 
 class Train:
@@ -6,14 +9,14 @@ class Train:
         self.dataset_name = "TestData"
         self.continue_or_not = False
         self.existing_embeddings_path = None
-        self.entity_dimension = 100
-        self.relation_dimension = 100
-        self.num_of_epochs = 1000
-        self.output_frequency = 50
-        self.num_of_batches = 128
+        self.entity_dimension = 5
+        self.relation_dimension = 5
+        self.num_of_epochs = 20
+        self.output_frequency = 5
+        self.num_of_batches = 2
         self.learning_rate = 0.01
         self.margin = 1.0
-        self.norm = 2
+        self.norm = 1
 
         print("---Configurations---")
         print("dataset name: %s" % self.dataset_name)
@@ -51,6 +54,8 @@ class Train:
         #print(self.test_triples)
 
         print("---Training---")
+        transe_network = transe.TransE(self.num_of_entities, self.num_of_relations, self.entity_dimension,
+                                       self.relation_dimension, self.margin, self.norm)
 
 
 
