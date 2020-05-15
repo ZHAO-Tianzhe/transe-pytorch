@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-class DatasetClass(Dataset):
+class TripleSet(Dataset):
 
     def __init__(self, num_of_triples):
         self.num_of_triples = num_of_triples
@@ -13,3 +13,4 @@ class DatasetClass(Dataset):
 
     def __getitem__(self, item):
         return self.triple_id_list[item]
+

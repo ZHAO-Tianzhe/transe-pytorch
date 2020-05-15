@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as func
 
 
-class TransE:
+class TransE(nn.Module):
     def __init__(self, num_of_entities, num_of_relations, entity_dimension, relation_dimension, margin, norm):
         super(TransE, self).__init__()
         self.num_of_entities = num_of_entities
