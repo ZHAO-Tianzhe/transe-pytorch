@@ -5,7 +5,7 @@
 class DataInput:
     def __init__(self, dataset_name):
         self.dataset_name = dataset_name
-        self.file_path = "./data/" + self.dataset_name
+        self.file_path = "./data/input/" + self.dataset_name
         self.numbers = {"entity": 0, "relation": 0, "train_triple": 0, "valid_triple": 0, "test_triple": 0}
         self.triples = {"train_triple": {}, "valid_triple": {}, "test_triple": {}}
 
