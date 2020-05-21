@@ -9,23 +9,24 @@ from torch.utils.data import DataLoader
 import pickle
 import dataset_process
 import os
+import torch.nn.functional as func
 
 
 class Train:
     def __init__(self):
-        self.dataset_name = "TestData"  # e.g., "FB15K", "WN11", the dataset should be in "./data"
-        self.continue_or_not = True  # new training: False, training based on pre-trained embeddings: "True"
+        self.dataset_name = "WN18"  # e.g., "FB15K", "WN18", the dataset should be in "./data"
+        self.continue_or_not = False  # new training: False, training based on pre-trained embeddings: "True"
         self.existing_embeddings_path = "./data/output"  # path of pre-trained embeddings
-        self.entity_dimension = 10
-        self.relation_dimension = 10
-        self.num_of_epochs = 20
-        self.output_frequency = 5  # output embeddings every x epochs
-        self.num_of_batches = 2
-        self.num_of_valid_batches = 2  # batch number of validating dataset
-        self.num_of_test_batches = 1  # batch number of testing dataset
+        self.entity_dimension = 50
+        self.relation_dimension = 50
+        self.num_of_epochs = 1000
+        self.output_frequency = 50  # output embeddings every x epochs
+        self.train_batch_size = 1024
+        self.valid_batch_size = 128  # batch number of validating dataset
+        self.test_batch_size = 128  # batch number of testing dataset
         self.learning_rate = 0.01
         self.margin = 1.0
-        self.norm = 1
+        self.norm = 2
         self.early_stop_patience = 5  # stop training when validation performance drops in x consecutive epochs
 
         print("---Configurations---")
@@ -43,9 +44,9 @@ class Train:
         print("relation dimension: %d" % self.relation_dimension)
         print("number of epochs: %d" % self.num_of_epochs)
         print("output embeddings every %d epochs" % self.output_frequency)
-        print("number of training batches: %d" % self.num_of_batches)
-        print("number of validating batches: %d" % self.num_of_valid_batches)
-        print("number of testing batches: %d" % self.num_of_test_batches)
+        print("training batch size: %d" % self.train_batch_size)
+        print("validating batch size: %d" % self.valid_batch_size)
+        print("testing batch size: %d" % self.test_batch_size)
         print("learning rate: %f" % self.learning_rate)
         print("learning margin: %f" % self.margin)
         print("learning norm: %d" % self.norm)
@@ -60,13 +61,15 @@ class Train:
         self.num_of_test_triples = input_data.numbers["test_triple"]
         self.train_triples = input_data.triples[
             "train_triple"]  # {training_triple_id: [head entity, relation, tail entity]}
+        self.train_head_to_others = {}  # {head entity: {(relation, tail entity): None}}
+        self.pre_process_train_triples()
         self.valid_triples = input_data.triples[
             "valid_triple"]  # {validating_triple_id: [head entity, relation, tail entity]}
-        self.valid_batches = self.validate_and_test_batches(self.num_of_valid_triples, self.num_of_valid_batches,
+        self.valid_batches = self.validate_and_test_batches(self.num_of_valid_triples, self.valid_batch_size,
                                                             self.valid_triples)
         self.test_triples = input_data.triples[
             "test_triple"]  # {testing_triple_id: [head entity, relation, tail entity]}
-        self.test_batches = self.validate_and_test_batches(self.num_of_test_triples, self.num_of_test_batches,
+        self.test_batches = self.validate_and_test_batches(self.num_of_test_triples, self.test_batch_size,
                                                            self.test_triples)
         print("number of entities: %d" % self.num_of_entities)
         print("number of relations: %d" % self.num_of_relations)
@@ -91,6 +94,12 @@ class Train:
         print("---Testing---")
         self.testing()
 
+    def pre_process_train_triples(self):
+        for entity_id in range(self.num_of_entities):
+            self.train_head_to_others[entity_id] = {}
+        for tmp_value in self.train_triples.values():
+            self.train_head_to_others[tmp_value[0]][(tmp_value[1], tmp_value[2])] = None
+
     def negative_triple_sampling(self):
         negative_triples = {}
         head_or_tail = torch.randint(low=0, high=2, size=(self.num_of_train_triples,)).tolist()
@@ -98,27 +107,26 @@ class Train:
             if head_or_tail[tmp_id]:
                 negative_heads = torch.randperm(n=self.num_of_entities).tolist()
                 tmp_head_id = 0
-                while [negative_heads[tmp_head_id], self.train_triples[tmp_id][1],
-                       self.train_triples[tmp_id][2]] in self.train_triples.values():
+                while negative_heads[tmp_head_id] in self.train_head_to_others and (self.train_triples[tmp_id][1],
+                       self.train_triples[tmp_id][2]) in self.train_head_to_others[negative_heads[tmp_head_id]]:
                     tmp_head_id += 1
                 negative_triples[tmp_id] = [negative_heads[tmp_head_id], self.train_triples[tmp_id][1],
                                             self.train_triples[tmp_id][2]]
             else:
                 negative_tails = torch.randperm(n=self.num_of_entities).tolist()
                 tmp_tail_id = 0
-                while [self.train_triples[tmp_id][0], self.train_triples[tmp_id][1],
-                       negative_tails[tmp_tail_id]] in self.train_triples.values():
+                while self.train_triples[tmp_id][0] in self.train_head_to_others and (self.train_triples[tmp_id][1],
+                       negative_tails[tmp_tail_id]) in self.train_head_to_others[self.train_triples[tmp_id][0]]:
                     tmp_tail_id += 1
                 negative_triples[tmp_id] = [self.train_triples[tmp_id][0], self.train_triples[tmp_id][1],
                                             negative_tails[tmp_tail_id]]
         return negative_triples
 
-    def validate_and_test_batches(self, num_of_triples, num_of_batches, triples):
+    def validate_and_test_batches(self, num_of_triples, batch_size, triples):
         head_batches = []
         relation_batches = []
         tail_batches = []
         triple_set = dataset_process.TripleSet(num_of_triples)
-        batch_size = int(num_of_triples / num_of_batches)
         data_loader = DataLoader(dataset=triple_set, batch_size=batch_size)
 
         for batch in data_loader:
@@ -159,15 +167,19 @@ class Train:
         optimizer = optim.SGD(params=self.transe_network.parameters(), lr=self.learning_rate)
 
         triple_set = dataset_process.TripleSet(self.num_of_train_triples)
-        batch_size = int(self.num_of_train_triples / self.num_of_batches)
-        print("training batch size: %d" % batch_size)
-        data_loader = DataLoader(dataset=triple_set, batch_size=batch_size, shuffle=True)
+        print("number of batches: %d" % int(self.num_of_train_triples / self.train_batch_size))
+        data_loader = DataLoader(dataset=triple_set, batch_size=self.train_batch_size, shuffle=True)
 
         best_valid_result = self.num_of_entities
         fall_times = 0
         for epoch in range(self.num_of_epochs):
+            print("# epoch: %d" % epoch)
             epoch_loss = 0.
             negative_triples = self.negative_triple_sampling()
+            self.transe_network.entity_embeddings.weight.data = func.normalize(
+                self.transe_network.entity_embeddings.weight.data, 2, 1)
+            self.transe_network.relation_embeddings.weight.data = func.normalize(
+                self.transe_network.relation_embeddings.weight.data, 2, 1)
             for batch in data_loader:
                 batch = batch.tolist()
                 optimizer.zero_grad()
@@ -193,7 +205,7 @@ class Train:
                 batch_loss.backward()
                 optimizer.step()
                 epoch_loss += batch_loss
-            print("epoch: %d, loss: %f" % (epoch, epoch_loss))
+            print("epoch loss: %f" % epoch_loss)
             valid_mean_rank = self.ranking_computing(self.valid_batches)
             if valid_mean_rank < best_valid_result:
                 print("validation mean rank decreased from: %d to %d" % (best_valid_result, valid_mean_rank))
@@ -212,8 +224,10 @@ class Train:
         self.output()
 
     def output(self):
-        print("output embeddings!")
-        if os.path.isdir("%s/%s/" % (self.existing_embeddings_path, self.dataset_name)) is False:
+        print("output embeddings...")
+        if os.path.exists(self.existing_embeddings_path) is False:
+            os.mkdir(self.existing_embeddings_path)
+        if os.path.exists("%s/%s/" % (self.existing_embeddings_path, self.dataset_name)) is False:
             os.mkdir("%s/%s/" % (self.existing_embeddings_path, self.dataset_name))
         with open("%s/%s/entity_embeddings.pickle" % (self.existing_embeddings_path, self.dataset_name),
                   "wb") as f:
