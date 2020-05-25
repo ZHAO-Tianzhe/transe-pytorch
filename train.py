@@ -15,7 +15,7 @@ import torch.nn.functional as func
 class Train:
     def __init__(self):
         self.dataset_name = "WN18"  # e.g., "FB15K", "WN18", the dataset should be in "./data"
-        self.continue_or_not = False  # new training: False, training based on pre-trained embeddings: "True"
+        self.continue_or_not = True  # new training: False, training based on pre-trained embeddings: "True"
         self.existing_embeddings_path = "./data/output"  # path of pre-trained embeddings
         self.entity_dimension = 50
         self.relation_dimension = 50
